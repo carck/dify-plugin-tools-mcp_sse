@@ -98,7 +98,7 @@ class McpSseClient(McpClient):
             self._error_event.set()
             self._connected.set()
 
-    def send_message(self, data: dict):
+    def send_message(self, data: dict, conversation_id: str = None) -> dict:
         if not self.endpoint_url:
             if self._thread_exception:
                 raise ConnectionError(f"{self.name} - MCP Server connection failed: {self._thread_exception}")
@@ -108,7 +108,11 @@ class McpSseClient(McpClient):
         response = self.client.post(
             url=self.endpoint_url,
             json=data,
-            headers={'Content-Type': 'application/json', 'trace-id': data["id"] if "id" in data else ""},
+            headers={
+                'Content-Type': 'application/json', 
+                'trace-id': data["id"] if "id" in data else "",
+                'conversation_id': conversation_id if conversation_id else "",
+            },
             timeout=self.timeout
         )
         response.raise_for_status()
@@ -185,7 +189,7 @@ class McpSseClient(McpClient):
             raise Exception(f"MCP Server tools/list error: {response['error']}")
         return response.get("result", {}).get("tools", [])
 
-    def call_tool(self, tool_name: str, tool_args: dict):
+    def call_tool(self, tool_name: str, tool_args: dict, conversation_id: str = None):
         call_data = {
             "jsonrpc": "2.0",
             "id": uuid.uuid4().hex,
@@ -195,7 +199,7 @@ class McpSseClient(McpClient):
                 "arguments": tool_args
             }
         }
-        response = self.send_message(call_data)
+        response = self.send_message(call_data, conversation_id)
         if "error" in response:
             raise Exception(f"MCP Server tools/call error: {response['error']}")
         return response.get("result", {}).get("content", [])
@@ -222,10 +226,12 @@ class McpStreamableHttpClient(McpClient):
         except Exception as e:
             raise Exception(f"{self.name} - MCP Server connection close failed: {str(e)}")
 
-    def send_message(self, data: dict):
+    def send_message(self, data: dict, conversation_id: str = None) -> dict:
         headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
         if self.session_id:
             headers["Mcp-Session-Id"] = self.session_id
+        if conversation_id:
+            headers["conversation_id"] = conversation_id
         logging.debug(f"{self.name} - Sending client message: {data}")
         response = self.client.post(
             url=self.url,
@@ -283,7 +289,7 @@ class McpStreamableHttpClient(McpClient):
             raise Exception(f"MCP Server tools/list error: {response['error']}")
         return response.get("result", {}).get("tools", [])
 
-    def call_tool(self, tool_name: str, tool_args: dict):
+    def call_tool(self, tool_name: str, tool_args: dict, conversation_id: str = None):
         call_data = {
             "jsonrpc": "2.0",
             "id": 2,
@@ -293,7 +299,7 @@ class McpStreamableHttpClient(McpClient):
                 "arguments": tool_args
             }
         }
-        response = self.send_message(call_data)
+        response = self.send_message(call_data, conversation_id)
         if "error" in response:
             raise Exception(f"MCP Server tools/call error: {response['error']}")
         return response.get("result", {}).get("content", [])
@@ -342,7 +348,7 @@ class McpClients:
         except Exception as e:
             raise RuntimeError(f"Error fetching tools: {str(e)}")
 
-    def execute_tool(self, tool_name: str, tool_args: dict[str, Any]):
+    def execute_tool(self, tool_name: str, tool_args: dict[str, Any], conversation_id: str = None):
         if not self._tools:
             self.fetch_tools()
         tool_clients = {}
@@ -354,7 +360,7 @@ class McpClients:
         try:
             if not client:
                 raise Exception(f"there is not a tool named {tool_name}")
-            result = client.call_tool(tool_name, tool_args)
+            result = client.call_tool(tool_name, tool_args, conversation_id=conversation_id)
             if isinstance(result, dict) and "progress" in result:
                 progress = result["progress"]
                 total = result["total"]
