@@ -1,7 +1,7 @@
 version: 0.1.6
 type: plugin
 author: junjiem
-name: mcp_sse
+name: mcp_sse_ex
 label:
   en_US: MCP SSE / StreamableHTTP
   zh_Hans: MCP SSE / StreamableHTTP
